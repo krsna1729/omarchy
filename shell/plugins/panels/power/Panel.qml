@@ -19,8 +19,8 @@ Panel {
   property string activeProfile: ""
   property int profileIndex: 0
   property bool cursorActive: false
-  // Charge limit (UPower threshold): default ON = healthy 80% limit.
-  // OFF = full 100% charge. Persisted by UPower across reboots.
+  // Charge limit (UPower threshold): ON = healthy limit (usually 75-80%),
+  // OFF = full 100% charge. Reflects UPower state; persisted by UPower across reboots.
   property bool chargeLimitEnabled: true
   property bool chargeLimitSupported: false
   property string chargeLimitEnd: "80"
@@ -515,7 +515,7 @@ Panel {
             width: parent.width
             label: "Limit charge to " + root.chargeLimitEnd + "%"
             description: root.chargeLimitEnabled
-              ? "Healthy default. Turn off for a full 100% charge."
+              ? "Healthy limit active. Turn off for a full 100% charge."
               : "Full 100% charge. Turn on to restore the healthy limit."
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily

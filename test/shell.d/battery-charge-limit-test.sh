@@ -12,7 +12,7 @@ mkdir -p "$tmp_dir/state"
 cat >"$tmp_dir/bin/upower" <<'STUB'
 #!/bin/bash
 if [[ ${1:-} == "-e" ]]; then
-  echo "/org/freedesktop/UPower/devices/battery_BAT0"
+  if [[ -n ${UPOWER_DEVICES:-} ]]; then printf '%b' "$UPOWER_DEVICES"; else echo "/org/freedesktop/UPower/devices/battery_BAT0"; fi
   exit 0
 fi
 exit 1
@@ -82,6 +82,13 @@ if run status --shell >/dev/null 2>&1; then
   fail "charge limit reports unknown without a capable battery"
 fi
 pass "charge limit exits non-zero without a capable battery"
+
+printf 'true' >"$tmp_dir/state/supported"
+devices='/org/freedesktop/UPower/devices/line_power_AC\n/org/freedesktop/UPower/devices/battery_macsmc_battery\n/org/freedesktop/UPower/devices/battery_BAT1\n/org/freedesktop/UPower/devices/DisplayDevice\n'
+shell_output=$(UPOWER_DEVICES="$devices" run status --shell) || fail "charge limit discovers non-BAT batteries and survives multiple batteries" "$shell_output"
+grep -Fx $'supported\ttrue' <<<"$shell_output" >/dev/null || fail "multi-battery shell output reports support" "$shell_output"
+grep -Fx $'end\t80' <<<"$shell_output" >/dev/null || fail "multi-battery shell output reports threshold" "$shell_output"
+pass "charge limit supports non-BAT names and multiple batteries"
 
 run_node_test <<'JS'
 const fs = require('fs')

@@ -30,7 +30,8 @@ Usage: $(basename "$0") [80|100|full|toggle|status] [--shell]
                 end\t<80|...>
                 supported\ttrue|false
 
-The default is limited. The setting is persisted by UPower across reboots.
+Nothing enables the threshold on install: status reflects whatever UPower has.
+The setting is persisted by UPower across reboots.
 USAGE
       exit 0
       ;;
@@ -39,7 +40,7 @@ USAGE
 done
 
 battery_paths() {
-  upower -e 2>/dev/null | grep -E 'battery_BAT' || true
+  upower -e 2>/dev/null | grep -E '/battery_' || true
 }
 
 bus_get() {
@@ -53,6 +54,12 @@ supported_batteries() {
     [[ $(bus_get "$p" ChargeThresholdSupported) == "true" ]] || continue
     printf '%s\n' "$p"
   done < <(battery_paths)
+}
+
+first_supported_battery() {
+  local -a bats
+  mapfile -t bats < <(supported_batteries)
+  printf '%s\n' "${bats[0]:-}"
 }
 
 current_enabled() {
@@ -105,7 +112,7 @@ if [[ $enabled == "unknown" ]]; then
 fi
 
 if [[ $shell_output == "true" ]]; then
-  first=$(supported_batteries | head -n 1)
+  first=$(first_supported_battery)
   start=$(bus_get "$first" ChargeStartThreshold)
   end=$(bus_get "$first" ChargeEndThreshold)
   printf 'enabled\t%s\n' "$enabled"
@@ -121,7 +128,7 @@ if [[ $cmd != "status" ]]; then
 fi
 
 if [[ $enabled == "true" ]]; then
-  first=$(supported_batteries | head -n 1)
+  first=$(first_supported_battery)
   end=$(bus_get "$first" ChargeEndThreshold)
   echo "Charge limit: ${end:-80}% (healthy). Run '$(basename "$0") full' for 100%."
 else
