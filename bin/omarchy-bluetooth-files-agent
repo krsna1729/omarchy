@@ -18,6 +18,10 @@ agent's to resolve: obexd runs with `--root <downloads>` so the name the agent
 returns is the name the transfer writes, and there is no rename afterwards.
 Nothing can land on a download that already exists; a second push of the same
 filename gets the next free "name (1)" style variant.
+
+obexd loads only the bluetooth, filesystem and opp plugins: File Transfer would
+otherwise list, read, overwrite and delete the downloads directory without ever
+asking this agent.
 """
 
 import os
@@ -37,6 +41,9 @@ from gi.repository import Gio, GLib, GLibUnix
 REGISTER_OBJECT = getattr(Gio.DBusConnection, "register_object_with_closures2", Gio.DBusConnection.register_object)
 
 OBEXD = "/usr/lib/bluetooth/obexd"
+# Object Push is the only profile that asks the agent. obexd's other services
+# (File Transfer, PC Suite) work on the root without it, so they stay unloaded.
+OBEXD_PLUGINS = "bluetooth,filesystem,opp"
 OBEX_SERVICE = "org.bluez.obex"
 OBEX_MANAGER_PATH = "/org/bluez/obex"
 AGENT_MANAGER_INTERFACE = "org.bluez.obex.AgentManager1"
@@ -290,6 +297,11 @@ class Registrar:
         return GLib.SOURCE_REMOVE
 
 
+def obexd_command(directory):
+    """obexd restricted to Object Push, storing in `directory`."""
+    return [OBEXD, "--nodetach", "--root", directory, "--plugin", OBEXD_PLUGINS]
+
+
 def obexd_is_running(session):
     """True when something already owns org.bluez.obex on this bus."""
     try:
@@ -355,7 +367,7 @@ def main():
     # obexd only stores inside its root folder, and the download directory is
     # this agent's to resolve, so the agent starts obexd with that root.
     try:
-        obexd = subprocess.Popen([OBEXD, "--nodetach", "--root", directory])
+        obexd = subprocess.Popen(obexd_command(directory))
     except OSError as error:
         log(f"cannot start {OBEXD}: {error.strerror}")
         return 1

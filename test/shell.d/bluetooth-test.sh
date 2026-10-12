@@ -155,6 +155,11 @@ with tempfile.TemporaryDirectory() as directory:
     check(second == os.path.join(directory, "report (1).pdf"), "a second push of the same name gets the next free name", second)
     check(open(first, encoding="utf-8").read() == "already here", "the push never lands on the existing download")
 
+    command = agent.obexd_command(directory)
+    check(command[command.index("--root") + 1] == directory, "obexd is rooted in the download directory", command)
+    check(command[command.index("--plugin") + 1] == "bluetooth,filesystem,opp",
+          "obexd loads only the Object Push plugins, so File Transfer is not served", command)
+
     third = paired.authorize(TRANSFER)
     check(third == os.path.join(directory, "report (2).pdf"), "further pushes keep counting", third)
 
