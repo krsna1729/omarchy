@@ -113,6 +113,9 @@ Panel {
   readonly property string fileReceiveHint: fileReceiveActive ? "Stop accepting files" : "Accept files from paired devices"
   property bool fileReceiveActive: false
   property bool fileReceiveBusy: false
+  property bool fileReceiveToggleNeedsQuery: false
+  property bool fileReceiveSettlementPending: false
+  property string fileReceiveQueryPurpose: "refresh"
 
   readonly property color hoverFill: bar
     ? Style.hoverFillFor(bar.foreground, Commons.Color.accent)
@@ -384,22 +387,30 @@ Panel {
     actionFocused = false
   }
 
-  // The helper is the only thing that touches the unit, and it exits non-zero
-  // while the receiver is down — the exit code is the state, so nothing here
-  // parses systemd output.
+  // The helper reports systemd's active state by exit code. Serialise queries
+  // so a refresh already in flight cannot answer a toggle with stale state.
   function refreshFileReceive() {
+    if (fileReceiveBusy || fileStateProc.running) return
+    fileReceiveQueryPurpose = "refresh"
     fileStateProc.running = true
   }
 
-  // Asking for a direction rather than a toggle, like the radio switch: the
-  // helper runs detached, and the switch only moves once the unit has settled,
-  // so a second click inside that window would re-read the old state and undo
-  // the first.
+  function startFileReceiveQuery(purpose) {
+    fileReceiveQueryPurpose = purpose
+    fileStateProc.running = true
+  }
+
+  // Decide direction from a fresh helper query, not the panel's last display
+  // value. The switch stays busy through the tracked unit change and a second
+  // query that confirms the resulting state.
   function toggleFileReceive() {
     if (fileReceiveBusy) return
     fileReceiveBusy = true
-    Quickshell.execDetached(["omarchy-bluetooth-files", fileReceiveActive ? "off" : "on"])
-    fileStateTimer.restart()
+    if (fileStateProc.running) {
+      fileReceiveToggleNeedsQuery = true
+      return
+    }
+    startFileReceiveQuery("toggle")
   }
 
   function moveCursorH(delta) {
@@ -635,16 +646,44 @@ Panel {
     id: fileStateProc
     command: ["omarchy-bluetooth-files", "is-on"]
     onExited: function(exitCode) {
-      root.fileReceiveActive = exitCode === 0
-      root.fileReceiveBusy = false
+      if (root.fileReceiveToggleNeedsQuery) {
+        root.fileReceiveToggleNeedsQuery = false
+        root.startFileReceiveQuery("toggle")
+        return
+      }
+      if (root.fileReceiveSettlementPending) {
+        root.fileReceiveSettlementPending = false
+        root.startFileReceiveQuery("settle")
+        return
+      }
+
+      if (root.fileReceiveQueryPurpose === "toggle") {
+        root.fileReceiveActive = exitCode === 0
+        fileChangeProc.command = [
+          "omarchy-bluetooth-files",
+          exitCode === 0 ? "off" : "on"
+        ]
+        fileChangeProc.running = true
+      } else if (root.fileReceiveQueryPurpose === "settle") {
+        root.fileReceiveActive = exitCode === 0
+        root.fileReceiveBusy = false
+      } else if (!root.fileReceiveBusy) {
+        root.fileReceiveActive = exitCode === 0
+      }
     }
   }
 
-  Timer {
-    id: fileStateTimer
-    interval: 600
-    repeat: false
-    onTriggered: root.refreshFileReceive()
+  Process {
+    id: fileChangeProc
+    running: false
+    command: []
+    onExited: function(exitCode) {
+      if (fileStateProc.running) {
+        root.fileReceiveSettlementPending = true
+        return
+      }
+      root.startFileReceiveQuery("settle")
+    }
   }
 
   Timer {
@@ -895,7 +934,7 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: root.fileReceiveActive ? "PUSH → ~/DOWNLOADS" : "PUSH · OFF"
+              text: root.fileReceiveActive ? "PUSH · ON" : "PUSH · OFF"
               color: Qt.darker(root.bar.foreground, 1.4)
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.caption

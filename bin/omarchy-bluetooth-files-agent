@@ -95,12 +95,13 @@ def downloads_dir():
                 for line in user_dirs:
                     match = re.match(r'\s*XDG_DOWNLOAD_DIR\s*=\s*"(.*)"\s*$', line)
                     if match:
-                        configured = match.group(1)
+                        configured = re.sub(r'\\(["\\])', r'\1', match.group(1))
         except OSError:
             pass
     if configured:
         configured = configured.replace("$HOME", home())
-    return configured or os.path.join(home(), "Downloads")
+        return configured
+    return os.path.join(home(), "Downloads")
 
 
 def claim_path(directory, name):
